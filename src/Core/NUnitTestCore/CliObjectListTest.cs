@@ -361,7 +361,7 @@ namespace UnitTests
         }
 
         [Fact]
-        public void TryGetCliConfigRefreshOnlyAddsObjectsFromSchemas()
+        public void TryGetCliConfigWithSchemasDoesNotWriteObjectLists()
         {
             var config = new CliConfig { Schemas = new List<string> { "other" } };
 
@@ -380,6 +380,13 @@ namespace UnitTests
                 Assert.Null(resultConfig.Views);
                 Assert.Null(resultConfig.StoredProcedures);
                 Assert.Null(resultConfig.Functions);
+
+                var written = JsonSerializer.Deserialize<CliConfig>(File.ReadAllText(testPath));
+                Assert.Equal(new[] { "other" }, written.Schemas);
+                Assert.Null(written.Tables);
+                Assert.Null(written.Views);
+                Assert.Null(written.StoredProcedures);
+                Assert.Null(written.Functions);
             }
             finally
             {

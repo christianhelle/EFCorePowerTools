@@ -153,20 +153,15 @@ public static class CliConfigMapper
                 },
             };
 
-        if (config.CodeGeneration.RefreshObjectLists)
-        {
-            config.Tables = Add(objects, config.Tables, config.Schemas);
-            config.Views = Add(objects, config.Views, config.Schemas);
-            config.StoredProcedures = Add(objects, config.StoredProcedures, config.Schemas);
-            config.Functions = Add(objects, config.Functions, config.Schemas);
-        }
+        var useSchemas = config.Schemas?.Count > 0;
 
-        if (config.Schemas?.Count > 0)
+        // With schemas, the object lists only hold what the user wrote, so they are not refreshed.
+        if (config.CodeGeneration.RefreshObjectLists && !useSchemas)
         {
-            config.Tables = AddFromSchemas(objects, config.Tables, config.Schemas);
-            config.Views = AddFromSchemas(objects, config.Views, config.Schemas);
-            config.StoredProcedures = AddFromSchemas(objects, config.StoredProcedures, config.Schemas);
-            config.Functions = AddFromSchemas(objects, config.Functions, config.Schemas);
+            config.Tables = Add(objects, config.Tables);
+            config.Views = Add(objects, config.Views);
+            config.StoredProcedures = Add(objects, config.StoredProcedures);
+            config.Functions = Add(objects, config.Functions);
         }
 
         warnings = ValidateExcludedColumns(config, objects);
@@ -177,6 +172,15 @@ public static class CliConfigMapper
             var options = new JsonSerializerOptions { WriteIndented = true };
 #pragma warning restore CA1869 // Cache and reuse 'JsonSerializerOptions' instances
             File.WriteAllText(fullPath, JsonSerializer.Serialize(config, options), Encoding.UTF8);
+        }
+
+        // Objects in the schemas are added after writing, so they are generated but not saved to the file.
+        if (useSchemas)
+        {
+            config.Tables = AddFromSchemas(objects, config.Tables, config.Schemas);
+            config.Views = AddFromSchemas(objects, config.Views, config.Schemas);
+            config.StoredProcedures = AddFromSchemas(objects, config.StoredProcedures, config.Schemas);
+            config.Functions = AddFromSchemas(objects, config.Functions, config.Schemas);
         }
 
         return true;
@@ -390,7 +394,7 @@ public static class CliConfigMapper
             || schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.OrdinalIgnoreCase)
                 || entity.Name.StartsWith($"{schema}.", StringComparison.OrdinalIgnoreCase));
 
-    private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities, List<string> schemas)
+    private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities)
         where T : IEntity, new()
     {
         var objectType = DefineObjectType<T>();
@@ -405,7 +409,7 @@ public static class CliConfigMapper
         var result = entities ?? new List<T>();
         var newIds = new HashSet<string>(newItems.Select(x => x.DisplayName));
         result.RemoveAll(x => !newIds.Contains(x.Name) && string.IsNullOrEmpty(x.ExclusionWildcard));
-        foreach (var displayName in newItems.Where(t => IsInSchemas(t, schemas)).Select(t => t.DisplayName))
+        foreach (var displayName in newItems.Select(t => t.DisplayName))
         {
             var existing = result.SingleOrDefault(t => t.Name == displayName);
             if (Equals(existing, default(T)))
@@ -421,7 +425,9 @@ public static class CliConfigMapper
         where T : IEntity, new()
     {
         var objectType = DefineObjectType<T>();
-        var newItems = models.Where(o => o.ObjectType == objectType && IsInSchemas(o, schemas)).ToList();
+        var newItems = models.Where(o => o.ObjectType == objectType
+            && schemas.Exists(schema => string.Equals(schema, o.Schema, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         if (newItems.Count == 0)
         {
             return entities;
@@ -436,10 +442,6 @@ public static class CliConfigMapper
 
         return result;
     }
-
-    private static bool IsInSchemas(TableModel model, List<string> schemas)
-        => schemas is null || schemas.Count == 0
-            || schemas.Exists(schema => string.Equals(schema, model.Schema, StringComparison.OrdinalIgnoreCase));
 
     private static ObjectType DefineObjectType<T>()
         where T : IEntity, new()
