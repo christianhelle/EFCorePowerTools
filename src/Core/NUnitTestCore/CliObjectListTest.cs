@@ -97,6 +97,16 @@ namespace UnitTests
         }
 
         [Fact]
+        public void SchemasRoundTripsThroughJson()
+        {
+            var config = JsonSerializer.Deserialize<CliConfig>("{\"schemas\":[\"sales\",\"hr\"]}");
+
+            Assert.Equal(new[] { "sales", "hr" }, config.Schemas);
+            Assert.Contains("\"schemas\":[\"sales\",\"hr\"]", JsonSerializer.Serialize(config));
+            Assert.DoesNotContain("\"schemas\"", JsonSerializer.Serialize(new CliConfig()));
+        }
+
+        [Fact]
         public void CanUseGobalFilter()
         {
             var config = GetConfig();
