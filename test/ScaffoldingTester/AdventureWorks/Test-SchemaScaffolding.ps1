@@ -6,7 +6,8 @@
     Builds the AdventureWorks dacpac and the efcpt (EF Core 8) CLI from source, then scaffolds the
     dacpac once per scenario. Each scenario selects two or three schemas, and the tables, views,
     stored procedures and functions found in the generated code must match the expected objects
-    for those schemas exactly, and the efcpt-config.json must not get any object lists.
+    for those schemas exactly, plus any objects from other schemas that a scenario lists with
+    "exclude": false. efcpt must not add any objects to the efcpt-config.json object lists.
 
 .EXAMPLE
     pwsh ./Test-SchemaScaffolding.ps1
@@ -76,7 +77,17 @@ $scenarios = @(
     @{ Name = 'Three schemas'; Schemas = 'HumanResources', 'Person', 'Purchasing' }
     @{ Name = 'Three schemas including dbo'; Schemas = 'dbo', 'HumanResources', 'Sales' }
     @{ Name = 'Case-insensitive schemas without refresh'; Schemas = 'sales', 'PERSON'; NoRefresh = $true }
+
+    # Objects outside the schemas are generated when they are listed with "exclude": false.
+    @{
+        Name    = 'One schema plus objects from other schemas'
+        Schemas = @('Sales')
+        Extras  = 'Tables Production.Product', 'Tables Person.Person', 'Procedures HumanResources.uspGetEmployeesByDepartment'
+    }
 )
+
+# Config file section for each object type.
+$sections = [ordered]@{ Tables = 'tables'; Views = 'views'; Procedures = 'stored-procedures'; Functions = 'functions' }
 
 function Invoke-Checked([string] $what, [scriptblock] $command) {
     Write-Host "==> $what" -ForegroundColor Cyan
@@ -121,25 +132,40 @@ function Get-ScaffoldedObjects([string] $modelsDir) {
     return @($found | Sort-Object -Unique)
 }
 
-function Test-ConfigHasNoObjectLists([string] $configPath) {
+function Get-ConfiguredObjects([string] $configPath) {
     $config = Get-Content $configPath -Raw | ConvertFrom-Json
-    $lists = @('tables', 'views', 'stored-procedures', 'functions' | Where-Object { $config.PSObject.Properties.Name -contains $_ })
-
-    if ($lists.Count -eq 0) {
-        Write-Host '    PASS: efcpt-config.json has no object lists, only schemas' -ForegroundColor Green
-        return $true
+    $found = foreach ($type in $sections.Keys) {
+        foreach ($entry in $config.($sections[$type])) {
+            if ($entry.name -match '^\[(\w+)\]\.\[(\w+)\]$') { "$type $($Matches[1]).$($Matches[2])" }
+        }
     }
+    return @($found | Where-Object { $_ } | Sort-Object -Unique)
+}
 
-    Write-Host "    FAIL: efcpt-config.json has object lists: $($lists -join ', ')" -ForegroundColor Red
-    return $false
+function New-ObjectLists([string[]] $extras) {
+    $lists = [ordered]@{}
+    foreach ($extra in $extras) {
+        $type, $schema, $name = $extra -split '[ .]'
+        $section = $sections[$type]
+        if (-not $lists.Contains($section)) {
+            $lists[$section] = [System.Collections.Generic.List[object]]::new()
+        }
+
+        $lists[$section].Add([ordered]@{ name = "[$schema].[$name]"; exclude = $false })
+    }
+    return $lists
 }
 
 function Test-Objects([string] $what, [string[]] $expected, [string[]] $actual) {
+    # A function returning an empty array returns $null, so drop empty entries.
+    $expected = @($expected | Where-Object { $_ })
+    $actual = @($actual | Where-Object { $_ })
     $missing = @($expected | Where-Object { $_ -notin $actual })
     $unexpected = @($actual | Where-Object { $_ -notin $expected })
 
     if ($missing.Count -eq 0 -and $unexpected.Count -eq 0) {
-        Write-Host "    PASS: $what has $($actual.Count) objects, all from the selected schemas" -ForegroundColor Green
+        $result = if ($actual.Count -eq 0) { 'no objects, as expected' } else { "the $($actual.Count) expected objects" }
+        Write-Host "    PASS: $what has $result" -ForegroundColor Green
         return $true
     }
 
@@ -182,6 +208,10 @@ foreach ($scenario in $scenarios) {
         'names'           = @{ 'dbcontext-name' = 'AdventureWorksContext'; 'root-namespace' = 'SchemaTest' }
         'schemas'         = @($scenario.Schemas)
     }
+    $extras = @($scenario.Extras | Where-Object { $_ })
+    $lists = New-ObjectLists $extras
+    foreach ($section in $lists.Keys) { $config[$section] = $lists[$section] }
+
     $configPath = Join-Path $outputDir 'efcpt-config.json'
     $config | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding utf8
 
@@ -189,9 +219,11 @@ foreach ($scenario in $scenarios) {
         dotnet $efcpt $dacpac mssql -i $configPath -o $outputDir --no-readme
     }
 
-    $expected = Get-ExpectedObjects $scenario.Schemas
+    $expected = @(Get-ExpectedObjects $scenario.Schemas) + $extras | Sort-Object
     $codeOk = Test-Objects 'generated code' $expected (Get-ScaffoldedObjects (Join-Path $outputDir 'Models'))
-    $configOk = Test-ConfigHasNoObjectLists $configPath
+
+    # efcpt must not add objects to the config file, so it only lists the extras written above.
+    $configOk = Test-Objects 'efcpt-config.json' $extras (Get-ConfiguredObjects $configPath)
 
     if (-not ($codeOk -and $configOk)) {
         $failures++
