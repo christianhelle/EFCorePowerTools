@@ -5,8 +5,8 @@
 .DESCRIPTION
     Builds the AdventureWorks dacpac and the efcpt (EF Core 8) CLI from source, then scaffolds the
     dacpac once per scenario. Each scenario selects two or three schemas, and the tables, views,
-    stored procedures and functions found in the generated code must match the expected objects
-    for those schemas exactly.
+    stored procedures and functions found in the generated code and in the efcpt-config.json
+    written by efcpt must match the expected objects for those schemas exactly.
 
 .EXAMPLE
     pwsh ./Test-SchemaScaffolding.ps1
@@ -121,6 +121,34 @@ function Get-ScaffoldedObjects([string] $modelsDir) {
     return @($found | Sort-Object -Unique)
 }
 
+function Get-ConfiguredObjects([string] $configPath) {
+    $config = Get-Content $configPath -Raw | ConvertFrom-Json
+    $sections = [ordered]@{ tables = 'Tables'; views = 'Views'; 'stored-procedures' = 'Procedures'; functions = 'Functions' }
+    $found = foreach ($section in $sections.Keys) {
+        foreach ($entry in $config.$section) {
+            if ($entry.name -match '^\[(\w+)\]\.\[(\w+)\]$') {
+                "$($sections[$section]) $($Matches[1]).$($Matches[2])"
+            }
+        }
+    }
+    return @($found | Where-Object { $_ } | Sort-Object -Unique)
+}
+
+function Test-Objects([string] $what, [string[]] $expected, [string[]] $actual) {
+    $missing = @($expected | Where-Object { $_ -notin $actual })
+    $unexpected = @($actual | Where-Object { $_ -notin $expected })
+
+    if ($missing.Count -eq 0 -and $unexpected.Count -eq 0) {
+        Write-Host "    PASS: $what has $($actual.Count) objects, all from the selected schemas" -ForegroundColor Green
+        return $true
+    }
+
+    Write-Host "    FAIL: $what" -ForegroundColor Red
+    $missing | ForEach-Object { Write-Host "      missing:    $_" -ForegroundColor Red }
+    $unexpected | ForEach-Object { Write-Host "      unexpected: $_" -ForegroundColor Red }
+    return $false
+}
+
 if (-not $SkipBuild) {
     # The SQL project folder has a global.json that pins an SDK MSBuild.Sdk.SqlProj supports.
     Push-Location $PSScriptRoot
@@ -162,18 +190,12 @@ foreach ($scenario in $scenarios) {
     }
 
     $expected = Get-ExpectedObjects $scenario.Schemas
-    $actual = Get-ScaffoldedObjects (Join-Path $outputDir 'Models')
-    $missing = @($expected | Where-Object { $_ -notin $actual })
-    $unexpected = @($actual | Where-Object { $_ -notin $expected })
+    $codeOk = Test-Objects 'generated code' $expected (Get-ScaffoldedObjects (Join-Path $outputDir 'Models'))
+    # Without refresh, efcpt leaves an existing config file as it is.
+    $configOk = $scenario.NoRefresh -or (Test-Objects 'efcpt-config.json' $expected (Get-ConfiguredObjects $configPath))
 
-    if ($missing.Count -eq 0 -and $unexpected.Count -eq 0) {
-        Write-Host "    PASS: $($actual.Count) objects, all from the selected schemas" -ForegroundColor Green
-    }
-    else {
+    if (-not ($codeOk -and $configOk)) {
         $failures++
-        Write-Host '    FAIL' -ForegroundColor Red
-        $missing | ForEach-Object { Write-Host "      missing:    $_" -ForegroundColor Red }
-        $unexpected | ForEach-Object { Write-Host "      unexpected: $_" -ForegroundColor Red }
     }
 }
 
