@@ -383,7 +383,8 @@ public static class CliConfigMapper
             return true;
         }
 
-        return schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.Ordinal));
+        return schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.OrdinalIgnoreCase)
+            || entity.Name.StartsWith($"{schema}.", StringComparison.OrdinalIgnoreCase));
     }
 
     private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities)

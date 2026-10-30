@@ -118,6 +118,26 @@ namespace UnitTests
         }
 
         [Fact]
+        public void SchemasMatchDottedNamesIgnoringCase()
+        {
+            var config = new CliConfig
+            {
+                Schemas = new List<string> { "Sales" },
+                Tables = new List<Table>
+                {
+                    new Table { Name = "sales.orders" },
+                    new Table { Name = "[SALES].[Customers]" },
+                    new Table { Name = "public.users" },
+                    new Table { Name = "salesarchive.orders" },
+                },
+            };
+
+            var result = CliConfigMapper.BuildObjectList(config);
+
+            Assert.Equal(new[] { "sales.orders", "[SALES].[Customers]" }, result.Select(x => x.Name));
+        }
+
+        [Fact]
         public void CanUseGobalFilter()
         {
             var config = GetConfig();
