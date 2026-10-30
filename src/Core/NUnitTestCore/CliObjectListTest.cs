@@ -361,6 +361,39 @@ namespace UnitTests
         }
 
         [Fact]
+        public void TryGetCliConfigAddsObjectsFromSchemasWithoutRefresh()
+        {
+            var config = new CliConfig
+            {
+                Schemas = new List<string> { "dbo" },
+                Tables = new List<Table> { new Table { Name = "[dbo].[Users]", ExcludedColumns = new List<string> { "Email" } } },
+            };
+            config.CodeGeneration.RefreshObjectLists = false;
+
+            var testPath = TestPath("schemas.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.Equal(new[] { "[dbo].[Users]", "[dbo].[Extras]", "[dbo].[Actors]", "[dbo].[Directors]" }, resultConfig.Tables.Select(x => x.Name));
+                Assert.Equal("Email", Assert.Single(resultConfig.Tables[0].ExcludedColumns));
+                Assert.Equal("[dbo].[UsersView]", Assert.Single(resultConfig.Views).Name);
+                Assert.Equal("[dbo].[TestProcedure]", Assert.Single(resultConfig.StoredProcedures).Name);
+                Assert.Equal("[dbo].[TestFunction]", Assert.Single(resultConfig.Functions).Name);
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
+        }
+
+        [Fact]
         public void TryGetCliConfigWithExcludedColumnsReturns()
         {
             var config = GetConfig();

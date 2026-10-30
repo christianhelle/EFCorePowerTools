@@ -161,6 +161,14 @@ public static class CliConfigMapper
             config.Functions = Add(objects, config.Functions);
         }
 
+        if (config.Schemas?.Count > 0)
+        {
+            config.Tables = AddFromSchemas(objects, config.Tables, config.Schemas);
+            config.Views = AddFromSchemas(objects, config.Views, config.Schemas);
+            config.StoredProcedures = AddFromSchemas(objects, config.StoredProcedures, config.Schemas);
+            config.Functions = AddFromSchemas(objects, config.Functions, config.Schemas);
+        }
+
         warnings = ValidateExcludedColumns(config, objects);
 
         if (!cliConfigExists || config.CodeGeneration.RefreshObjectLists)
@@ -413,6 +421,30 @@ public static class CliConfigMapper
         }
 
         return result.Count > 0 ? result : null;
+    }
+
+    private static List<T> AddFromSchemas<T>(IEnumerable<TableModel> models, List<T> entities, List<string> schemas)
+        where T : IEntity, new()
+    {
+        var objectType = DefineObjectType<T>();
+        var newItems = models.Where(o => o.ObjectType == objectType
+            && schemas.Exists(schema => string.Equals(schema, o.Schema, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        if (newItems.Count == 0)
+        {
+            return entities;
+        }
+
+        var result = entities ?? new List<T>();
+        foreach (var displayName in newItems.Select(t => t.DisplayName))
+        {
+            if (!result.Exists(t => t.Name == displayName))
+            {
+                result.Add(new T { Name = displayName });
+            }
+        }
+
+        return result;
     }
 
     private static ObjectType DefineObjectType<T>()
