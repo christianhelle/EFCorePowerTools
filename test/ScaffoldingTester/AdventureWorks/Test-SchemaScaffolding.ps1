@@ -5,8 +5,8 @@
 .DESCRIPTION
     Builds the AdventureWorks dacpac and the efcpt (EF Core 8) CLI from source, then scaffolds the
     dacpac once per scenario. Each scenario selects two or three schemas, and the tables, views,
-    stored procedures and functions found in the generated code and in the efcpt-config.json
-    written by efcpt must match the expected objects for those schemas exactly.
+    stored procedures and functions found in the generated code must match the expected objects
+    for those schemas exactly, and the efcpt-config.json must not get any object lists.
 
 .EXAMPLE
     pwsh ./Test-SchemaScaffolding.ps1
@@ -121,17 +121,17 @@ function Get-ScaffoldedObjects([string] $modelsDir) {
     return @($found | Sort-Object -Unique)
 }
 
-function Get-ConfiguredObjects([string] $configPath) {
+function Test-ConfigHasNoObjectLists([string] $configPath) {
     $config = Get-Content $configPath -Raw | ConvertFrom-Json
-    $sections = [ordered]@{ tables = 'Tables'; views = 'Views'; 'stored-procedures' = 'Procedures'; functions = 'Functions' }
-    $found = foreach ($section in $sections.Keys) {
-        foreach ($entry in $config.$section) {
-            if ($entry.name -match '^\[(\w+)\]\.\[(\w+)\]$') {
-                "$($sections[$section]) $($Matches[1]).$($Matches[2])"
-            }
-        }
+    $lists = @('tables', 'views', 'stored-procedures', 'functions' | Where-Object { $config.PSObject.Properties.Name -contains $_ })
+
+    if ($lists.Count -eq 0) {
+        Write-Host '    PASS: efcpt-config.json has no object lists, only schemas' -ForegroundColor Green
+        return $true
     }
-    return @($found | Where-Object { $_ } | Sort-Object -Unique)
+
+    Write-Host "    FAIL: efcpt-config.json has object lists: $($lists -join ', ')" -ForegroundColor Red
+    return $false
 }
 
 function Test-Objects([string] $what, [string[]] $expected, [string[]] $actual) {
@@ -191,8 +191,7 @@ foreach ($scenario in $scenarios) {
 
     $expected = Get-ExpectedObjects $scenario.Schemas
     $codeOk = Test-Objects 'generated code' $expected (Get-ScaffoldedObjects (Join-Path $outputDir 'Models'))
-    # Without refresh, efcpt leaves an existing config file as it is.
-    $configOk = $scenario.NoRefresh -or (Test-Objects 'efcpt-config.json' $expected (Get-ConfiguredObjects $configPath))
+    $configOk = Test-ConfigHasNoObjectLists $configPath
 
     if (-not ($codeOk -and $configOk)) {
         $failures++
