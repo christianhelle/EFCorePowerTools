@@ -168,6 +168,20 @@ In the example above, Users and Messages tables will be selected.
 
 In the example above, Users table will be selected.
 
+#### Selecting objects by schema
+
+To generate everything in one or more database schemas, add a top-level `schemas` list:
+
+```json
+{
+   "schemas": [ "sales", "hr" ]
+}
+```
+
+Only tables, views, stored procedures and functions in the listed schemas are then generated. All objects in those schemas are included and added to the object lists, even when `refresh-object-lists` is `false`. Schema names are case-insensitive.
+
+`"exclude": true` and `exclusionWildcard` filters still apply within the selected schemas. An object outside the listed schemas is included only when it is explicitly set to `"exclude": false`.
+
 #### Keeping a hand-maintained object list
 
 You can keep a configuration in source control that lists only the objects your application needs. Merge settings like these into `efcpt-config.json`, or into a copy of the sample configuration before the first run:
