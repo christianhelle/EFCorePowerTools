@@ -385,16 +385,10 @@ public static class CliConfigMapper
 
     private static bool SchemaFilter<T>(T entity, List<string> schemas)
         where T : IEntity, new()
-    {
-        if (schemas is null || schemas.Count == 0
-            || (entity.Exclude.HasValue && !entity.Exclude.Value))
-        {
-            return true;
-        }
-
-        return schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.OrdinalIgnoreCase)
-            || entity.Name.StartsWith($"{schema}.", StringComparison.OrdinalIgnoreCase));
-    }
+        => schemas is null || schemas.Count == 0
+            || (entity.Exclude.HasValue && !entity.Exclude.Value)
+            || schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.OrdinalIgnoreCase)
+                || entity.Name.StartsWith($"{schema}.", StringComparison.OrdinalIgnoreCase));
 
     private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities)
         where T : IEntity, new()
@@ -436,13 +430,11 @@ public static class CliConfigMapper
         }
 
         var result = entities ?? new List<T>();
-        foreach (var displayName in newItems.Select(t => t.DisplayName))
-        {
-            if (!result.Exists(t => t.Name == displayName))
-            {
-                result.Add(new T { Name = displayName });
-            }
-        }
+        result.AddRange(newItems
+            .Select(t => t.DisplayName)
+            .Where(displayName => !result.Exists(t => t.Name == displayName))
+            .Select(displayName => new T { Name = displayName })
+            .ToList());
 
         return result;
     }
