@@ -183,10 +183,10 @@ public static class CliConfigMapper
 
         var objects = new List<SerializationTableModel>();
 
-        ToSerializationModel(config.Tables, objects.AddRange);
-        ToSerializationModel(config.Views, objects.AddRange);
-        ToSerializationModel(config.StoredProcedures, objects.AddRange);
-        ToSerializationModel(config.Functions, objects.AddRange);
+        ToSerializationModel(config.Tables, config.Schemas, objects.AddRange);
+        ToSerializationModel(config.Views, config.Schemas, objects.AddRange);
+        ToSerializationModel(config.StoredProcedures, config.Schemas, objects.AddRange);
+        ToSerializationModel(config.Functions, config.Schemas, objects.AddRange);
 
         return objects;
     }
@@ -230,7 +230,7 @@ public static class CliConfigMapper
         return warnings;
     }
 
-    private static void ToSerializationModel<T>(IList<T> entities, Action<IEnumerable<SerializationTableModel>> addRange)
+    private static void ToSerializationModel<T>(IList<T> entities, List<string> schemas, Action<IEnumerable<SerializationTableModel>> addRange)
         where T : IEntity, new()
     {
         if (entities is null)
@@ -245,7 +245,8 @@ public static class CliConfigMapper
         var filters = GetFilters(entities);
 
         var serializationTableModels = entities.Where<T>(entity => ExclusionFilter(entity, excludeAll, filters)
-            && !string.IsNullOrEmpty(entity.Name))
+            && !string.IsNullOrEmpty(entity.Name)
+            && SchemaFilter(entity, schemas))
             .Select(entity =>
             {
                 var model = new SerializationTableModel(entity.Name, objectType, entity.ExcludedColumns, entity.ExcludedIndexes);
@@ -372,6 +373,17 @@ public static class CliConfigMapper
         }
 
         return !entity.Exclude ?? true;
+    }
+
+    private static bool SchemaFilter<T>(T entity, List<string> schemas)
+        where T : IEntity, new()
+    {
+        if (schemas is null || schemas.Count == 0)
+        {
+            return true;
+        }
+
+        return schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.Ordinal));
     }
 
     private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities)

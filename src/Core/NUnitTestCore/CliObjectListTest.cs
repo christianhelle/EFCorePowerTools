@@ -107,6 +107,17 @@ namespace UnitTests
         }
 
         [Fact]
+        public void SchemasLimitObjectListToObjectsInSchemas()
+        {
+            var config = GetConfig();
+            config.Schemas = new List<string> { "other" };
+
+            var result = CliConfigMapper.BuildObjectList(config);
+
+            Assert.Equal("[other].[Accounts]", Assert.Single(result).Name);
+        }
+
+        [Fact]
         public void CanUseGobalFilter()
         {
             var config = GetConfig();
