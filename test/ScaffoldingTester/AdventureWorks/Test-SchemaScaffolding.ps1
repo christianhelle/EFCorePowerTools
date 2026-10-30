@@ -11,16 +11,16 @@
 .EXAMPLE
     pwsh ./Test-SchemaScaffolding.ps1
 
+    The generated code for each scenario is written to the output folder next to this script,
+    which is cleared at the start of every run.
+
 .EXAMPLE
-    pwsh ./Test-SchemaScaffolding.ps1 -SkipBuild -KeepOutput
+    pwsh ./Test-SchemaScaffolding.ps1 -SkipBuild
 #>
 [CmdletBinding()]
 param(
     # Use the existing dacpac and efcpt build output.
-    [switch] $SkipBuild,
-
-    # Keep the generated code in the temp folder for inspection.
-    [switch] $KeepOutput
+    [switch] $SkipBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -138,50 +138,46 @@ foreach ($file in $dacpac, $efcpt) {
     if (-not (Test-Path $file)) { throw "Missing $file, run without -SkipBuild" }
 }
 
-$workRoot = Join-Path ([System.IO.Path]::GetTempPath()) "efcpt-schema-test-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+$workRoot = Join-Path $PSScriptRoot 'output'
+if (Test-Path $workRoot) {
+    Remove-Item $workRoot -Recurse -Force
+}
+
 $failures = 0
 
-try {
-    foreach ($scenario in $scenarios) {
-        $outputDir = Join-Path $workRoot ($scenario.Name -replace '\W+', '-')
-        New-Item -ItemType Directory -Path $outputDir | Out-Null
+foreach ($scenario in $scenarios) {
+    $outputDir = Join-Path $workRoot ($scenario.Name -replace '\W+', '-')
+    New-Item -ItemType Directory -Path $outputDir | Out-Null
 
-        $config = [ordered]@{
-            'code-generation' = @{ 'refresh-object-lists' = -not $scenario.NoRefresh }
-            'names'           = @{ 'dbcontext-name' = 'AdventureWorksContext'; 'root-namespace' = 'SchemaTest' }
-            'schemas'         = @($scenario.Schemas)
-        }
-        $configPath = Join-Path $outputDir 'efcpt-config.json'
-        $config | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding utf8
-
-        Invoke-Checked "Scaffold '$($scenario.Name)' [$($scenario.Schemas -join ', ')]" {
-            dotnet $efcpt $dacpac mssql -i $configPath -o $outputDir --no-readme
-        }
-
-        $expected = Get-ExpectedObjects $scenario.Schemas
-        $actual = Get-ScaffoldedObjects (Join-Path $outputDir 'Models')
-        $missing = @($expected | Where-Object { $_ -notin $actual })
-        $unexpected = @($actual | Where-Object { $_ -notin $expected })
-
-        if ($missing.Count -eq 0 -and $unexpected.Count -eq 0) {
-            Write-Host "    PASS: $($actual.Count) objects, all from the selected schemas" -ForegroundColor Green
-        }
-        else {
-            $failures++
-            Write-Host '    FAIL' -ForegroundColor Red
-            $missing | ForEach-Object { Write-Host "      missing:    $_" -ForegroundColor Red }
-            $unexpected | ForEach-Object { Write-Host "      unexpected: $_" -ForegroundColor Red }
-        }
+    $config = [ordered]@{
+        'code-generation' = @{ 'refresh-object-lists' = -not $scenario.NoRefresh }
+        'names'           = @{ 'dbcontext-name' = 'AdventureWorksContext'; 'root-namespace' = 'SchemaTest' }
+        'schemas'         = @($scenario.Schemas)
     }
-}
-finally {
-    if ($KeepOutput) {
-        Write-Host "Generated code kept in $workRoot"
+    $configPath = Join-Path $outputDir 'efcpt-config.json'
+    $config | ConvertTo-Json -Depth 5 | Set-Content $configPath -Encoding utf8
+
+    Invoke-Checked "Scaffold '$($scenario.Name)' [$($scenario.Schemas -join ', ')]" {
+        dotnet $efcpt $dacpac mssql -i $configPath -o $outputDir --no-readme
+    }
+
+    $expected = Get-ExpectedObjects $scenario.Schemas
+    $actual = Get-ScaffoldedObjects (Join-Path $outputDir 'Models')
+    $missing = @($expected | Where-Object { $_ -notin $actual })
+    $unexpected = @($actual | Where-Object { $_ -notin $expected })
+
+    if ($missing.Count -eq 0 -and $unexpected.Count -eq 0) {
+        Write-Host "    PASS: $($actual.Count) objects, all from the selected schemas" -ForegroundColor Green
     }
     else {
-        Remove-Item $workRoot -Recurse -Force -ErrorAction SilentlyContinue
+        $failures++
+        Write-Host '    FAIL' -ForegroundColor Red
+        $missing | ForEach-Object { Write-Host "      missing:    $_" -ForegroundColor Red }
+        $unexpected | ForEach-Object { Write-Host "      unexpected: $_" -ForegroundColor Red }
     }
 }
+
+Write-Host "Generated code is in $workRoot"
 
 if ($failures -gt 0) {
     Write-Host "$failures of $($scenarios.Count) scenarios failed" -ForegroundColor Red
