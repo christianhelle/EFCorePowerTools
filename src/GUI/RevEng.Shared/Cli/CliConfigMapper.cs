@@ -378,7 +378,8 @@ public static class CliConfigMapper
     private static bool SchemaFilter<T>(T entity, List<string> schemas)
         where T : IEntity, new()
     {
-        if (schemas is null || schemas.Count == 0)
+        if (schemas is null || schemas.Count == 0
+            || (entity.Exclude.HasValue && !entity.Exclude.Value))
         {
             return true;
         }

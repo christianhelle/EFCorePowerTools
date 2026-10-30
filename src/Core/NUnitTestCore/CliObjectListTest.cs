@@ -138,6 +138,20 @@ namespace UnitTests
         }
 
         [Fact]
+        public void SchemasKeepExplicitIncludesAndExclusions()
+        {
+            var config = GetConfig();
+            config.Schemas = new List<string> { "dbo" };
+            config.Tables.Single(x => x.Name == "[other].[Accounts]").Exclude = false;
+            config.Tables.Single(x => x.Name == "[dbo].[Users]").Exclude = true;
+            config.Tables.Add(new Table { ExclusionWildcard = "*ors]" });
+
+            var result = CliConfigMapper.BuildObjectList(config).Where(x => x.ObjectType == ObjectType.Table);
+
+            Assert.Equal(new[] { "[other].[Accounts]", "[dbo].[Extras]" }, result.Select(x => x.Name));
+        }
+
+        [Fact]
         public void CanUseGobalFilter()
         {
             var config = GetConfig();
