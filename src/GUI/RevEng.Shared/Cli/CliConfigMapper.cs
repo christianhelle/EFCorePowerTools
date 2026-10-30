@@ -155,10 +155,10 @@ public static class CliConfigMapper
 
         if (config.CodeGeneration.RefreshObjectLists)
         {
-            config.Tables = Add(objects, config.Tables);
-            config.Views = Add(objects, config.Views);
-            config.StoredProcedures = Add(objects, config.StoredProcedures);
-            config.Functions = Add(objects, config.Functions);
+            config.Tables = Add(objects, config.Tables, config.Schemas);
+            config.Views = Add(objects, config.Views, config.Schemas);
+            config.StoredProcedures = Add(objects, config.StoredProcedures, config.Schemas);
+            config.Functions = Add(objects, config.Functions, config.Schemas);
         }
 
         if (config.Schemas?.Count > 0)
@@ -390,7 +390,7 @@ public static class CliConfigMapper
             || schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.OrdinalIgnoreCase)
                 || entity.Name.StartsWith($"{schema}.", StringComparison.OrdinalIgnoreCase));
 
-    private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities)
+    private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities, List<string> schemas)
         where T : IEntity, new()
     {
         var objectType = DefineObjectType<T>();
@@ -405,7 +405,7 @@ public static class CliConfigMapper
         var result = entities ?? new List<T>();
         var newIds = new HashSet<string>(newItems.Select(x => x.DisplayName));
         result.RemoveAll(x => !newIds.Contains(x.Name) && string.IsNullOrEmpty(x.ExclusionWildcard));
-        foreach (var displayName in newItems.Select(t => t.DisplayName))
+        foreach (var displayName in newItems.Where(t => IsInSchemas(t, schemas)).Select(t => t.DisplayName))
         {
             var existing = result.SingleOrDefault(t => t.Name == displayName);
             if (Equals(existing, default(T)))
@@ -421,9 +421,7 @@ public static class CliConfigMapper
         where T : IEntity, new()
     {
         var objectType = DefineObjectType<T>();
-        var newItems = models.Where(o => o.ObjectType == objectType
-            && schemas.Exists(schema => string.Equals(schema, o.Schema, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
+        var newItems = models.Where(o => o.ObjectType == objectType && IsInSchemas(o, schemas)).ToList();
         if (newItems.Count == 0)
         {
             return entities;
@@ -438,6 +436,10 @@ public static class CliConfigMapper
 
         return result;
     }
+
+    private static bool IsInSchemas(TableModel model, List<string> schemas)
+        => schemas is null || schemas.Count == 0
+            || schemas.Exists(schema => string.Equals(schema, model.Schema, StringComparison.OrdinalIgnoreCase));
 
     private static ObjectType DefineObjectType<T>()
         where T : IEntity, new()

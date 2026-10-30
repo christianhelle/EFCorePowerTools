@@ -361,6 +361,33 @@ namespace UnitTests
         }
 
         [Fact]
+        public void TryGetCliConfigRefreshOnlyAddsObjectsFromSchemas()
+        {
+            var config = new CliConfig { Schemas = new List<string> { "other" } };
+
+            var testPath = TestPath("schemas-refresh.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.Equal("[other].[Accounts]", Assert.Single(resultConfig.Tables).Name);
+                Assert.Null(resultConfig.Views);
+                Assert.Null(resultConfig.StoredProcedures);
+                Assert.Null(resultConfig.Functions);
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
+        }
+
+        [Fact]
         public void TryGetCliConfigAddsObjectsFromSchemasWithoutRefresh()
         {
             var config = new CliConfig
