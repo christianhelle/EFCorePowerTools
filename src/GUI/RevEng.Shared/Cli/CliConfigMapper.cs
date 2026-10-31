@@ -391,8 +391,8 @@ public static class CliConfigMapper
         where T : IEntity, new()
         => schemas is null || schemas.Count == 0
             || (entity.Exclude.HasValue && !entity.Exclude.Value)
-            || schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.OrdinalIgnoreCase)
-                || entity.Name.StartsWith($"{schema}.", StringComparison.OrdinalIgnoreCase));
+            || schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.Ordinal)
+                || entity.Name.StartsWith($"{schema}.", StringComparison.Ordinal));
 
     private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities)
         where T : IEntity, new()
