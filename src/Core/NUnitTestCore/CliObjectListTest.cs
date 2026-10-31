@@ -397,6 +397,33 @@ namespace UnitTests
         }
 
         [Fact]
+        public void TryGetCliConfigOnlyAddsObjectsFromSchemasWithExactCase()
+        {
+            var config = new CliConfig { Schemas = new List<string> { "DBO", "Other" } };
+
+            var testPath = TestPath("schemas-case.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.Null(resultConfig.Tables);
+                Assert.Null(resultConfig.Views);
+                Assert.Null(resultConfig.StoredProcedures);
+                Assert.Null(resultConfig.Functions);
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
+        }
+
+        [Fact]
         public void TryGetCliConfigAddsObjectsFromSchemasWithoutRefresh()
         {
             var config = new CliConfig

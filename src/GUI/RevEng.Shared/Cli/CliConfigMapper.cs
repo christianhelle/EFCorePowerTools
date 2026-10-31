@@ -426,7 +426,7 @@ public static class CliConfigMapper
     {
         var objectType = DefineObjectType<T>();
         var newItems = models.Where(o => o.ObjectType == objectType
-            && schemas.Exists(schema => string.Equals(schema, o.Schema, StringComparison.OrdinalIgnoreCase)))
+            && schemas.Exists(schema => string.Equals(schema, o.Schema, StringComparison.Ordinal)))
             .ToList();
         if (newItems.Count == 0)
         {
