@@ -76,7 +76,7 @@ $scenarios = @(
     @{ Name = 'Two schemas'; Schemas = 'Sales', 'Production' }
     @{ Name = 'Three schemas'; Schemas = 'HumanResources', 'Person', 'Purchasing' }
     @{ Name = 'Three schemas including dbo'; Schemas = 'dbo', 'HumanResources', 'Sales' }
-    @{ Name = 'Case-insensitive schemas without refresh'; Schemas = 'sales', 'PERSON'; NoRefresh = $true }
+    @{ Name = 'Case-sensitive schemas without refresh'; Schemas = 'Sales', 'person'; NoRefresh = $true }
 
     # Objects outside the schemas are generated when they are listed with "exclude": false.
     @{
@@ -100,7 +100,10 @@ function Invoke-Checked([string] $what, [scriptblock] $command) {
 
 function Get-ExpectedObjects([string[]] $schemas) {
     $expected = foreach ($schema in $schemas) {
-        $key = $database.Keys | Where-Object { $_ -ieq $schema }
+        # Schema names are case-sensitive, so a schema with different casing matches nothing.
+        $key = $database.Keys | Where-Object { $_ -ceq $schema }
+        if (-not $key) { continue }
+
         $objects = $database[$key]
         foreach ($type in 'Tables', 'Views', 'Procedures', 'Functions') {
             foreach ($name in $objects[$type]) { "$type $key.$name" }
