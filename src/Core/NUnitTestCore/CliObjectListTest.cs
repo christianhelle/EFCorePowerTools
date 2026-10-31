@@ -424,6 +424,35 @@ namespace UnitTests
         }
 
         [Fact]
+        public void TryGetCliConfigKeepsUnbracketedEntryForObjectInSchemas()
+        {
+            var config = new CliConfig
+            {
+                Schemas = new List<string> { "dbo" },
+                Tables = new List<Table> { new Table { Name = "dbo.Users", Exclude = true } },
+            };
+
+            var testPath = TestPath("schemas-unbracketed.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.DoesNotContain(resultConfig.Tables, x => x.Name == "[dbo].[Users]");
+                Assert.DoesNotContain(CliConfigMapper.BuildObjectList(resultConfig), x => x.Name is "[dbo].[Users]" or "dbo.Users");
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
+        }
+
+        [Fact]
         public void TryGetCliConfigAddsObjectsFromSchemasWithoutRefresh()
         {
             var config = new CliConfig

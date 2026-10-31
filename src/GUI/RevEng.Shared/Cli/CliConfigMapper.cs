@@ -434,10 +434,11 @@ public static class CliConfigMapper
         }
 
         var result = entities ?? new List<T>();
+
+        // An entry may name the object as [schema].[name] or schema.name, so either one counts as present.
         result.AddRange(newItems
-            .Select(t => t.DisplayName)
-            .Where(displayName => !result.Exists(t => t.Name == displayName))
-            .Select(displayName => new T { Name = displayName })
+            .Where(o => !result.Exists(t => t.Name == o.DisplayName || t.Name == $"{o.Schema}.{o.Name}"))
+            .Select(o => new T { Name = o.DisplayName })
             .ToList());
 
         return result;
