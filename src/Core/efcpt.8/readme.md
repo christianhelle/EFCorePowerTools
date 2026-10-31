@@ -178,7 +178,7 @@ To generate everything in one or more database schemas, add a top-level `schemas
 }
 ```
 
-Only tables, views, stored procedures and functions in the listed schemas are then generated. All objects in those schemas are included, even when `refresh-object-lists` is `false`. The `tables`, `views`, `stored-procedures` and `functions` lists are not refreshed while `schemas` is set, so the configuration file only contains the entries you add yourself. Schema names are case-insensitive.
+Only tables, views, stored procedures and functions in the listed schemas are then generated. All objects in those schemas are included, even when `refresh-object-lists` is `false`. The `tables`, `views`, `stored-procedures` and `functions` lists are not refreshed while `schemas` is set, so the configuration file only contains the entries you add yourself. Schema names are case-sensitive, because a database with a case-sensitive collation can have schemas whose names differ only in casing.
 
 `"exclude": true` and `exclusionWildcard` filters still apply within the selected schemas. An object outside the listed schemas is included only when it is explicitly set to `"exclude": false`.
 
