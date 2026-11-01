@@ -8,6 +8,13 @@
     "code-generation": {
       "$ref": "#/definitions/CodeGeneration"
     },
+    "schemas": {
+      "type": "array",
+      "title": "Only generate objects in these database schemas, including all objects in them",
+      "items": {
+        "type": "string"
+      }
+    },
     "tables": {
       "type": "array",
       "title": "List of tables discovered in the source database",

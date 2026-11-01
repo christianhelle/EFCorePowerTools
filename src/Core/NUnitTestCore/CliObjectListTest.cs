@@ -97,6 +97,63 @@ namespace UnitTests
         }
 
         [Fact]
+        public void SchemasRoundTripsThroughJson()
+        {
+            var config = JsonSerializer.Deserialize<CliConfig>("{\"schemas\":[\"sales\",\"hr\"]}");
+
+            Assert.Equal(new[] { "sales", "hr" }, config.Schemas);
+            Assert.Contains("\"schemas\":[\"sales\",\"hr\"]", JsonSerializer.Serialize(config));
+            Assert.DoesNotContain("\"schemas\"", JsonSerializer.Serialize(new CliConfig()));
+        }
+
+        [Fact]
+        public void SchemasLimitObjectListToObjectsInSchemas()
+        {
+            var config = GetConfig();
+            config.Schemas = new List<string> { "other" };
+
+            var result = CliConfigMapper.BuildObjectList(config);
+
+            Assert.Equal("[other].[Accounts]", Assert.Single(result).Name);
+        }
+
+        [Fact]
+        public void SchemasMatchDottedNamesWithExactCase()
+        {
+            var config = new CliConfig
+            {
+                Schemas = new List<string> { "Sales" },
+                Tables = new List<Table>
+                {
+                    new Table { Name = "Sales.orders" },
+                    new Table { Name = "[Sales].[Customers]" },
+                    new Table { Name = "sales.orders" },
+                    new Table { Name = "[SALES].[Customers]" },
+                    new Table { Name = "public.users" },
+                    new Table { Name = "Salesarchive.orders" },
+                },
+            };
+
+            var result = CliConfigMapper.BuildObjectList(config);
+
+            Assert.Equal(new[] { "Sales.orders", "[Sales].[Customers]" }, result.Select(x => x.Name));
+        }
+
+        [Fact]
+        public void SchemasKeepExplicitIncludesAndExclusions()
+        {
+            var config = GetConfig();
+            config.Schemas = new List<string> { "dbo" };
+            config.Tables.Single(x => x.Name == "[other].[Accounts]").Exclude = false;
+            config.Tables.Single(x => x.Name == "[dbo].[Users]").Exclude = true;
+            config.Tables.Add(new Table { ExclusionWildcard = "*ors]" });
+
+            var result = CliConfigMapper.BuildObjectList(config).Where(x => x.ObjectType == ObjectType.Table);
+
+            Assert.Equal(new[] { "[other].[Accounts]", "[dbo].[Extras]" }, result.Select(x => x.Name));
+        }
+
+        [Fact]
         public void CanUseGobalFilter()
         {
             var config = GetConfig();
@@ -303,6 +360,129 @@ namespace UnitTests
         {
             Assert.Equal("utf-8-bom", new CodeGeneration().FileCharset);
             Assert.Equal("utf-8-bom", new ReverseEngineerCommandOptions().FileCharset);
+        }
+
+        [Fact]
+        public void TryGetCliConfigWithSchemasDoesNotWriteObjectLists()
+        {
+            var config = new CliConfig { Schemas = new List<string> { "other" } };
+
+            var testPath = TestPath("schemas-refresh.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.Equal("[other].[Accounts]", Assert.Single(resultConfig.Tables).Name);
+                Assert.Null(resultConfig.Views);
+                Assert.Null(resultConfig.StoredProcedures);
+                Assert.Null(resultConfig.Functions);
+
+                var written = JsonSerializer.Deserialize<CliConfig>(File.ReadAllText(testPath));
+                Assert.Equal(new[] { "other" }, written.Schemas);
+                Assert.Null(written.Tables);
+                Assert.Null(written.Views);
+                Assert.Null(written.StoredProcedures);
+                Assert.Null(written.Functions);
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
+        }
+
+        [Fact]
+        public void TryGetCliConfigOnlyAddsObjectsFromSchemasWithExactCase()
+        {
+            var config = new CliConfig { Schemas = new List<string> { "DBO", "Other" } };
+
+            var testPath = TestPath("schemas-case.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.Null(resultConfig.Tables);
+                Assert.Null(resultConfig.Views);
+                Assert.Null(resultConfig.StoredProcedures);
+                Assert.Null(resultConfig.Functions);
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
+        }
+
+        [Fact]
+        public void TryGetCliConfigKeepsUnbracketedEntryForObjectInSchemas()
+        {
+            var config = new CliConfig
+            {
+                Schemas = new List<string> { "dbo" },
+                Tables = new List<Table> { new Table { Name = "dbo.Users", Exclude = true } },
+            };
+
+            var testPath = TestPath("schemas-unbracketed.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.DoesNotContain(resultConfig.Tables, x => x.Name == "[dbo].[Users]");
+                Assert.DoesNotContain(CliConfigMapper.BuildObjectList(resultConfig), x => x.Name is "[dbo].[Users]" or "dbo.Users");
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
+        }
+
+        [Fact]
+        public void TryGetCliConfigAddsObjectsFromSchemasWithoutRefresh()
+        {
+            var config = new CliConfig
+            {
+                Schemas = new List<string> { "dbo" },
+                Tables = new List<Table> { new Table { Name = "[dbo].[Users]", ExcludedColumns = new List<string> { "Email" } } },
+            };
+            config.CodeGeneration.RefreshObjectLists = false;
+
+            var testPath = TestPath("schemas.efpcli.json");
+            try
+            {
+                WriteConfigFile(config, testPath);
+
+                CliConfigMapper.TryGetCliConfig(testPath, "fakeConnectionString",
+                    DatabaseType.SQLServer,
+                    GetDefaultTables(DatabaseType.SQLServer), CodeGenerationMode.EFCore8,
+                    out CliConfig resultConfig,
+                    out List<string> _);
+
+                Assert.Equal(new[] { "[dbo].[Users]", "[dbo].[Extras]", "[dbo].[Actors]", "[dbo].[Directors]" }, resultConfig.Tables.Select(x => x.Name));
+                Assert.Equal("Email", Assert.Single(resultConfig.Tables[0].ExcludedColumns));
+                Assert.Equal("[dbo].[UsersView]", Assert.Single(resultConfig.Views).Name);
+                Assert.Equal("[dbo].[TestProcedure]", Assert.Single(resultConfig.StoredProcedures).Name);
+                Assert.Equal("[dbo].[TestFunction]", Assert.Single(resultConfig.Functions).Name);
+            }
+            finally
+            {
+                RemoveConfigFile(testPath);
+            }
         }
 
         [Fact]

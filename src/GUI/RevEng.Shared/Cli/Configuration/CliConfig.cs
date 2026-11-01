@@ -40,6 +40,11 @@ public class CliConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<StoredProcedure> StoredProcedures { get; set; }
 
+    [JsonPropertyOrder(65)]
+    [JsonPropertyName("schemas")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public List<string> Schemas { get; set; }
+
     [JsonPropertyOrder(70)]
     [JsonPropertyName("tables")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

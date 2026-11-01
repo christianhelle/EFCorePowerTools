@@ -153,7 +153,10 @@ public static class CliConfigMapper
                 },
             };
 
-        if (config.CodeGeneration.RefreshObjectLists)
+        var useSchemas = config.Schemas?.Count > 0;
+
+        // With schemas, the object lists only hold what the user wrote, so they are not refreshed.
+        if (config.CodeGeneration.RefreshObjectLists && !useSchemas)
         {
             config.Tables = Add(objects, config.Tables);
             config.Views = Add(objects, config.Views);
@@ -171,6 +174,15 @@ public static class CliConfigMapper
             File.WriteAllText(fullPath, JsonSerializer.Serialize(config, options), Encoding.UTF8);
         }
 
+        // Objects in the schemas are added after writing, so they are generated but not saved to the file.
+        if (useSchemas)
+        {
+            config.Tables = AddFromSchemas(objects, config.Tables, config.Schemas);
+            config.Views = AddFromSchemas(objects, config.Views, config.Schemas);
+            config.StoredProcedures = AddFromSchemas(objects, config.StoredProcedures, config.Schemas);
+            config.Functions = AddFromSchemas(objects, config.Functions, config.Schemas);
+        }
+
         return true;
     }
 
@@ -183,10 +195,10 @@ public static class CliConfigMapper
 
         var objects = new List<SerializationTableModel>();
 
-        ToSerializationModel(config.Tables, objects.AddRange);
-        ToSerializationModel(config.Views, objects.AddRange);
-        ToSerializationModel(config.StoredProcedures, objects.AddRange);
-        ToSerializationModel(config.Functions, objects.AddRange);
+        ToSerializationModel(config.Tables, config.Schemas, objects.AddRange);
+        ToSerializationModel(config.Views, config.Schemas, objects.AddRange);
+        ToSerializationModel(config.StoredProcedures, config.Schemas, objects.AddRange);
+        ToSerializationModel(config.Functions, config.Schemas, objects.AddRange);
 
         return objects;
     }
@@ -230,7 +242,7 @@ public static class CliConfigMapper
         return warnings;
     }
 
-    private static void ToSerializationModel<T>(IList<T> entities, Action<IEnumerable<SerializationTableModel>> addRange)
+    private static void ToSerializationModel<T>(IList<T> entities, List<string> schemas, Action<IEnumerable<SerializationTableModel>> addRange)
         where T : IEntity, new()
     {
         if (entities is null)
@@ -245,7 +257,8 @@ public static class CliConfigMapper
         var filters = GetFilters(entities);
 
         var serializationTableModels = entities.Where<T>(entity => ExclusionFilter(entity, excludeAll, filters)
-            && !string.IsNullOrEmpty(entity.Name))
+            && !string.IsNullOrEmpty(entity.Name)
+            && SchemaFilter(entity, schemas))
             .Select(entity =>
             {
                 var model = new SerializationTableModel(entity.Name, objectType, entity.ExcludedColumns, entity.ExcludedIndexes);
@@ -374,6 +387,13 @@ public static class CliConfigMapper
         return !entity.Exclude ?? true;
     }
 
+    private static bool SchemaFilter<T>(T entity, List<string> schemas)
+        where T : IEntity, new()
+        => schemas is null || schemas.Count == 0
+            || (entity.Exclude.HasValue && !entity.Exclude.Value)
+            || schemas.Exists(schema => entity.Name.StartsWith($"[{schema}].", StringComparison.Ordinal)
+                || entity.Name.StartsWith($"{schema}.", StringComparison.Ordinal));
+
     private static List<T> Add<T>(IEnumerable<TableModel> models, List<T> entities)
         where T : IEntity, new()
     {
@@ -399,6 +419,29 @@ public static class CliConfigMapper
         }
 
         return result.Count > 0 ? result : null;
+    }
+
+    private static List<T> AddFromSchemas<T>(IEnumerable<TableModel> models, List<T> entities, List<string> schemas)
+        where T : IEntity, new()
+    {
+        var objectType = DefineObjectType<T>();
+        var newItems = models.Where(o => o.ObjectType == objectType
+            && schemas.Exists(schema => string.Equals(schema, o.Schema, StringComparison.Ordinal)))
+            .ToList();
+        if (newItems.Count == 0)
+        {
+            return entities;
+        }
+
+        var result = entities ?? new List<T>();
+
+        // An entry may name the object as [schema].[name] or schema.name, so either one counts as present.
+        result.AddRange(newItems
+            .Where(o => !result.Exists(t => t.Name == o.DisplayName || t.Name == $"{o.Schema}.{o.Name}"))
+            .Select(o => new T { Name = o.DisplayName })
+            .ToList());
+
+        return result;
     }
 
     private static ObjectType DefineObjectType<T>()
